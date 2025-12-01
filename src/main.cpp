@@ -8,6 +8,7 @@
 #include "driver/gpio.h"
 #include "tinyusb.h"
 #include "tinyusb_cdc_acm.h"
+#include "whitelist.h"
 
 static const char* TAG = "twai_slcan_cpp";
 
@@ -15,6 +16,8 @@ static const char* TAG = "twai_slcan_cpp";
 #define TWAI_RX_GPIO ((gpio_num_t)17)
 #define TWAI_TIMING TWAI_TIMING_CONFIG_500KBITS()
 #define SLCAN_MAX_FRAME_LEN 32
+
+// #define IGNORE_WHITELIST
 
 static inline char nibble_to_hex(uint8_t n)
 {
@@ -103,6 +106,18 @@ static void slcan_task(void* arg)
         esp_err_t r = twai_receive(&msg, pdMS_TO_TICKS(1000));
         if (r == ESP_OK && !msg.extd)
         {
+            // Apply software whitelist filter for standard IDs
+            uint16_t sid = msg.identifier & 0x7FF;
+            // The IGNORE_WHITELIST switch is handled here for visibility
+#ifndef IGNORE_WHITELIST
+            if (!is_whitelisted_id(sid)) {
+                continue; // drop non-whitelisted IDs
+            }
+#else
+            // Whitelist disabled at build time for testing
+            (void)sid;
+#endif
+
             int len = format_slcan_standard(buf, sizeof(buf), msg);
             if (len > 0 && now_connected)
             {
@@ -115,6 +130,10 @@ static void slcan_task(void* arg)
 
 extern "C" void app_main()
 {
+    // Informative notice when building with whitelist disabled for testing
+#ifdef IGNORE_WHITELIST
+    ESP_LOGW(TAG, "IGNORE_WHITELIST is defined: forwarding ALL standard CAN frames (no filtering)");
+#endif
     init_tinyusb();
     if (init_twai() != ESP_OK)
     {
