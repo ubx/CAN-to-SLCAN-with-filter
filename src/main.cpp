@@ -17,8 +17,6 @@ static const char* TAG = "twai_slcan_cpp";
 #define TWAI_TIMING TWAI_TIMING_CONFIG_500KBITS()
 #define SLCAN_MAX_FRAME_LEN 32
 
-// #define IGNORE_WHITELIST
-
 static inline char nibble_to_hex(uint8_t n)
 {
     n &= 0xF;
