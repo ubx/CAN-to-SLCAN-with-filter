@@ -10,6 +10,18 @@
 #include "tinyusb_cdc_acm.h"
 #include "whitelist.h"
 
+#ifndef APP_NAME
+#define APP_NAME "UnknownApp"
+#endif
+
+#ifndef APP_VERSION
+#define APP_VERSION "0.0.0"
+#endif
+
+#ifndef GIT_REVISION
+#define GIT_REVISION "unknown"
+#endif
+
 static const char* TAG = "twai_slcan_cpp";
 
 #define TWAI_TX_GPIO ((gpio_num_t)18)
