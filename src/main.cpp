@@ -131,7 +131,7 @@ static void slcan_task(void* arg)
             int len = format_slcan_standard(buf, sizeof(buf), msg);
             if (len > 0 && now_connected)
             {
-                tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0, (const uint8_t*)buf, len);
+                tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0, reinterpret_cast<const uint8_t*>(buf), len);
                 tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
             }
         }
