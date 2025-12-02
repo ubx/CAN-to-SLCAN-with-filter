@@ -24,8 +24,13 @@
 
 static const char* TAG = "twai_slcan_cpp";
 
-#define TWAI_TX_GPIO ((gpio_num_t)18)
-#define TWAI_RX_GPIO ((gpio_num_t)17)
+#ifndef TWAI_TX_GPIO
+#define TWAI_TX_GPIO 18
+#endif
+
+#ifndef TWAI_RX_GPIO
+#define TWAI_RX_GPIO 17
+#endif
 #define TWAI_TIMING TWAI_TIMING_CONFIG_500KBITS()
 #define SLCAN_MAX_FRAME_LEN 32
 
@@ -62,11 +67,12 @@ static int format_slcan_standard(char* out, size_t out_sz, const twai_message_t&
 
 static esp_err_t init_twai()
 {
-    twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(TWAI_TX_GPIO, TWAI_RX_GPIO, TWAI_MODE_NORMAL);
+    twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)TWAI_TX_GPIO, (gpio_num_t)TWAI_RX_GPIO, TWAI_MODE_NORMAL);
     twai_timing_config_t t_config = TWAI_TIMING;
     twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
     ESP_LOGI(TAG, "Installing TWAI driver...");
+    ESP_LOGI(TAG, "Configured TWAI pins: TX=%d, RX=%d", TWAI_TX_GPIO, TWAI_RX_GPIO);
     esp_err_t ret = twai_driver_install(&g_config, &t_config, &f_config);
     if (ret != ESP_OK) return ret;
 
