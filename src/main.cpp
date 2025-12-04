@@ -105,7 +105,7 @@ static void init_tinyusb()
     ESP_LOGI(TAG, "TinyUSB CDC-ACM initialized");
 }
 
-static void slcan_task(void* arg)
+[[noreturn]] static void slcan_task(void* arg)
 {
     twai_message_t msg;
     char buf[SLCAN_MAX_FRAME_LEN];
