@@ -40,6 +40,78 @@ static inline char nibble_to_hex(uint8_t n)
     return (n < 10) ? ('0' + n) : ('A' + (n - 10));
 }
 
+#ifdef RGB_LED_PIN
+#include "driver/rmt.h"
+// Timing per WS2812B at 800 kHz. We use RMT with 50 ns tick (APB 80MHz / clk_div 4)
+static const int WS_RMT_CHANNEL = RMT_CHANNEL_0;
+static const int WS_RMT_CLK_DIV = 4; // 80MHz / 4 = 20MHz => 50ns tick
+static const uint16_t T0H = 6;  // 6 * 50ns = 300ns
+static const uint16_t T0L = 14; // 14 * 50ns = 700ns -> total 1.0us
+static const uint16_t T1H = 14; // 700ns
+static const uint16_t T1L = 6;  // 300ns -> total 1.0us
+static const uint32_t TRESET_TICKS = 1200; // 60us reset (60us / 50ns = 1200)
+
+static void ws2812_init()
+{
+    rmt_config_t cfg = {};
+    cfg.rmt_mode = RMT_MODE_TX;
+    cfg.channel = (rmt_channel_t)WS_RMT_CHANNEL;
+    cfg.gpio_num = (gpio_num_t)RGB_LED_PIN;
+    cfg.mem_block_num = 1;
+    cfg.tx_config.loop_en = false;
+    cfg.tx_config.carrier_en = false;
+    cfg.tx_config.idle_output_en = true;
+    cfg.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
+    cfg.clk_div = WS_RMT_CLK_DIV;
+    ESP_ERROR_CHECK(rmt_config(&cfg));
+    ESP_ERROR_CHECK(rmt_driver_install(cfg.channel, 0, 0));
+}
+
+static void ws2812_set_color(uint8_t r, uint8_t g, uint8_t b)
+{
+    // Select byte order according to LED wiring/protocol expectation
+    // Default is GRB (classic WS2812B), can be overridden via build flag
+    uint8_t data[3];
+#if defined(WS_ORDER_RGB)
+    data[0] = r; data[1] = g; data[2] = b;
+#else // default to GRB
+    data[0] = g; data[1] = r; data[2] = b;
+#endif
+    rmt_item32_t items[24 + 1]; // 24 bits + 1 reset item
+    int idx = 0;
+    for (int i = 0; i < 3; ++i)
+    {
+        for (int bit = 7; bit >= 0; --bit)
+        {
+            bool is_one = (data[i] >> bit) & 0x01;
+            if (is_one)
+            {
+                items[idx].duration0 = T1H;
+                items[idx].level0 = 1;
+                items[idx].duration1 = T1L;
+                items[idx].level1 = 0;
+            }
+            else
+            {
+                items[idx].duration0 = T0H;
+                items[idx].level0 = 1;
+                items[idx].duration1 = T0L;
+                items[idx].level1 = 0;
+            }
+            idx++;
+        }
+    }
+    // Reset pulse (low for >= 50us)
+    items[idx].duration0 = TRESET_TICKS;
+    items[idx].level0 = 0;
+    items[idx].duration1 = 0;
+    items[idx].level1 = 0;
+
+    ESP_ERROR_CHECK(rmt_write_items((rmt_channel_t)WS_RMT_CHANNEL, items, idx + 1, true));
+    ESP_ERROR_CHECK(rmt_wait_tx_done((rmt_channel_t)WS_RMT_CHANNEL, pdMS_TO_TICKS(50)));
+}
+#endif // RGB_LED_PIN
+
 static int format_slcan_standard(char* out, size_t out_sz, const twai_message_t& msg)
 {
     if (!out || msg.extd) return -1;
@@ -151,6 +223,10 @@ extern "C" void app_main()
     ESP_LOGW(TAG, "IGNORE_WHITELIST is defined: forwarding ALL standard CAN frames (no filtering)");
 #endif
     init_tinyusb();
+#ifdef RGB_LED_PIN
+    // Initialize and set onboard RGB LED to green on supported boards
+    ws2812_init();
+#endif
     if (init_twai() != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to init TWAI");
@@ -158,4 +234,7 @@ extern "C" void app_main()
     }
     xTaskCreate(slcan_task, "slcan_task", 4096, nullptr, 5, nullptr);
     ESP_LOGI(TAG, "SLCAN bridge running");
+#ifdef RGB_LED_PIN
+    ws2812_set_color(0, 255, 0);
+#endif
 }
