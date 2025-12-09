@@ -24,7 +24,7 @@ Recommended: use one of the provided environments in `platformio.ini`.
 
 - Environment `esp32-s3-zero`
   - Board: `esp32-s3-fh4r2` (custom board JSON in `boards/`)
-  - TWAI pins: `TX=7`, `RX=6`
+  - TWAI pins: `TX=4`, `RX=5`
   - Build: `pio run -e esp32-s3-zero`
   - Flash: `pio run -t upload -e esp32-s3-zero`
 
