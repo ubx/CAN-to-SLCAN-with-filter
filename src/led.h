@@ -1,4 +1,4 @@
-// Simple WS2812 LED control interface
+// SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
 #include <stdint.h>

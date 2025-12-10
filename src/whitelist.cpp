@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-only
 #include "whitelist.h"
 
 // Always compile the actual whitelist here; optional bypass is handled in main.cpp
