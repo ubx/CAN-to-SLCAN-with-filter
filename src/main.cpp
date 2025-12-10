@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <cstdio>
-#include <cstring>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
