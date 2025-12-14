@@ -8,6 +8,7 @@
 #include "tinyusb.h"
 #include "tinyusb_cdc_acm.h"
 #include "whitelist.h"
+#include "ble.h"
 
 #ifndef APP_NAME
 #define APP_NAME "UnknownApp"
@@ -131,6 +132,11 @@ static void init_tinyusb()
                 tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0, reinterpret_cast<const uint8_t*>(buf), len);
                 tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
             }
+            // Also forward over BLE UART if enabled/connected
+            if (len > 0 && ble_uart_connected())
+            {
+                ble_uart_write(reinterpret_cast<const uint8_t*>(buf), (size_t)len);
+            }
         }
     }
 }
@@ -142,6 +148,8 @@ extern "C" void app_main()
 #endif
 
     init_tinyusb();
+    // Optional BLE UART (does nothing unless ENABLE_BLE is defined)
+    ble_init();
 
 #ifdef RGB_LED_PIN
     ws2812_init();

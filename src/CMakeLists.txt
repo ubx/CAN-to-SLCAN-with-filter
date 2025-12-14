@@ -3,6 +3,9 @@ idf_component_register(
         "main.cpp"
         "led.cpp"
         "whitelist.cpp"
+        "ble.cpp"
     INCLUDE_DIRS
         "."
+    REQUIRES
+        bt
 )
