@@ -294,15 +294,7 @@ void ble_init()
         ESP_LOGE(TAG, "gatt add svcs rc=%d", rc);
         return;
     }
-    // Ensure services are started before advertising/connecting
-    rc = ble_gatts_start();
-    if (rc != 0)
-    {
-        ESP_LOGE(TAG, "gatt start rc=%d", rc);
-        return;
-    }
-    ESP_LOGI(TAG, "GATT UART service (FFE0) added; DATA=FFE1 (read/write/notify); tx_val_handle=%u",
-             (unsigned)s_tx_val_handle);
+    ESP_LOGI(TAG, "GATT UART service (FFE0) added; DATA=FFE1 (read/write/notify); tx_val_handle=%u", (unsigned)s_tx_val_handle);
 
     ble_hs_cfg.sync_cb = on_sync;
 
