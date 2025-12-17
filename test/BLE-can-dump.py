@@ -7,7 +7,7 @@ from bleak import BleakClient
 BLE_ADDR = "94:A9:90:37:D1:1E"
 CHAR_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"
 CAN_IFACE = "can0"
-OUT_FILE = "candump.log"
+OUT_FILE = "BLE-candump.log"
 
 rx_buffer = bytearray()
 
