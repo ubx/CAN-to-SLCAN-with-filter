@@ -5,6 +5,10 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "driver/twai.h"
+
+static uint32_t g_can_rx_ok = 0;
+static uint32_t g_can_rx_timeout = 0;
+static uint32_t g_can_rx_other_err = 0;
 #include "tinyusb.h"
 #include "tinyusb_cdc_acm.h"
 #include "whitelist.h"
@@ -70,17 +74,76 @@ static int format_slcan_standard(char* out, size_t out_sz, const twai_message_t&
 
 static esp_err_t init_twai()
 {
-    twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)TWAI_TX_GPIO, (gpio_num_t)TWAI_RX_GPIO,
-                                                                 TWAI_MODE_NORMAL);
+    twai_general_config_t g_config =
+        TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)TWAI_TX_GPIO, (gpio_num_t)TWAI_RX_GPIO, TWAI_MODE_NORMAL);
+
+    // Make RX queue much larger to avoid drops under load.
+    // Tune based on your bus rate + host speed. 256 is a good starting point.
+    g_config.rx_queue_len = 256;
+    g_config.tx_queue_len = 16;
+
     twai_timing_config_t t_config = TWAI_TIMING;
     twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
     ESP_LOGI(TAG, "Installing TWAI driver...");
     ESP_LOGI(TAG, "Configured TWAI pins: TX=%d, RX=%d", TWAI_TX_GPIO, TWAI_RX_GPIO);
+    ESP_LOGI(TAG, "TWAI queues: rx_queue_len=%d tx_queue_len=%d", g_config.rx_queue_len, g_config.tx_queue_len);
+
     esp_err_t ret = twai_driver_install(&g_config, &t_config, &f_config);
     if (ret != ESP_OK) return ret;
 
     return twai_start();
+}
+
+[[noreturn]] static void slcan_task(void* arg)
+{
+    twai_message_t msg;
+    char buf[SLCAN_MAX_FRAME_LEN];
+    TickType_t last_stat = xTaskGetTickCount();
+
+    while (true)
+    {
+        esp_err_t r = twai_receive(&msg, pdMS_TO_TICKS(1000));
+        if (r == ESP_OK)
+        {
+            g_can_rx_ok++;
+
+            if (!msg.extd)
+            {
+#ifndef IGNORE_WHITELIST
+                uint16_t sid = msg.identifier & 0x7FF;
+                if (!is_whitelisted_id(sid)) continue;
+#endif
+                int len = format_slcan_standard(buf, sizeof(buf), msg);
+                if (len > 0 && tud_cdc_connected())
+                {
+                    tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0, reinterpret_cast<const uint8_t*>(buf), len);
+                    tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+                }
+                if (len > 0 && ble_uart_connected())
+                {
+                    ble_uart_write(reinterpret_cast<const uint8_t*>(buf), (size_t)len);
+                }
+            }
+        }
+        else if (r == ESP_ERR_TIMEOUT)
+        {
+            g_can_rx_timeout++;
+        }
+        else
+        {
+            g_can_rx_other_err++;
+        }
+
+        // Log stats every 5 seconds
+        TickType_t now = xTaskGetTickCount();
+        if (now - last_stat >= pdMS_TO_TICKS(5000))
+        {
+            last_stat = now;
+            ESP_LOGI(TAG, "TWAI rx stats: ok=%u timeout=%u other_err=%u",
+                     (unsigned)g_can_rx_ok, (unsigned)g_can_rx_timeout, (unsigned)g_can_rx_other_err);
+        }
+    }
 }
 
 static void init_tinyusb()
@@ -103,42 +166,6 @@ static void init_tinyusb()
     cdc_cfg.callback_line_coding_changed = nullptr;
     ESP_ERROR_CHECK(tinyusb_cdcacm_init(&cdc_cfg));
     ESP_LOGI(TAG, "TinyUSB CDC-ACM initialized");
-}
-
-[[noreturn]] static void slcan_task(void* arg)
-{
-    twai_message_t msg;
-    char buf[SLCAN_MAX_FRAME_LEN];
-    bool prev_connected = false;
-
-    while (true)
-    {
-        bool now_connected = tud_cdc_connected();
-        if (now_connected != prev_connected)
-        {
-            ESP_LOGI(TAG, "CDC connected: %s", now_connected ? "yes" : "no");
-            prev_connected = now_connected;
-        }
-        esp_err_t r = twai_receive(&msg, pdMS_TO_TICKS(1000));
-        if (r == ESP_OK && !msg.extd)
-        {
-#ifndef IGNORE_WHITELIST
-            uint16_t sid = msg.identifier & 0x7FF;
-            if (!is_whitelisted_id(sid)) continue;
-#endif
-            int len = format_slcan_standard(buf, sizeof(buf), msg);
-            if (len > 0 && now_connected)
-            {
-                tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0, reinterpret_cast<const uint8_t*>(buf), len);
-                tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
-            }
-            // Also forward over BLE UART if enabled/connected
-            if (len > 0 && ble_uart_connected())
-            {
-                ble_uart_write(reinterpret_cast<const uint8_t*>(buf), (size_t)len);
-            }
-        }
-    }
 }
 
 extern "C" void app_main()
