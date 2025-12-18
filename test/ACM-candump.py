@@ -3,7 +3,7 @@ import serial
 import time
 
 # --- CONFIG ---
-SERIAL_DEV = "/dev/ttyACM3"
+SERIAL_DEV = "/dev/ttyACM0"
 BAUDRATE = 576000  # typical for SLCAN over USB CDC
 CAN_IFACE = "can0"
 OUT_FILE = "ACM-candump.log"
