@@ -1,12 +1,38 @@
 #!/usr/bin/env python3
 import serial
 import time
+import glob
+import sys
 
 # --- CONFIG ---
-SERIAL_DEV = "/dev/ttyACM0"
 BAUDRATE = 576000  # typical for SLCAN over USB CDC
 CAN_IFACE = "can0"
 OUT_FILE = "ACM-candump.log"
+
+
+def detect_acm_device() -> str | None:
+    """
+    Detect first available /dev/ttyACM* device
+    """
+    devices = sorted(glob.glob("/dev/ttyACM*"))
+    if not devices:
+        return None
+
+    for dev in devices:
+        try:
+            ser = serial.Serial(
+                dev,
+                BAUDRATE,
+                timeout=1,
+                rtscts=False,
+                dsrdtr=False,
+            )
+            ser.close()
+            return dev
+        except Exception:
+            continue
+
+    return None
 
 
 def parse_slcan_line(line: str):
@@ -37,9 +63,14 @@ def parse_slcan_line(line: str):
 
 
 def main():
-    print(f"Opening {SERIAL_DEV} @ {BAUDRATE} baud")
+    dev = detect_acm_device()
+    if not dev:
+        print("❌ No /dev/ttyACM* device found")
+        sys.exit(1)
+
+    print(f"Opening {dev} @ {BAUDRATE} baud")
     ser = serial.Serial(
-        SERIAL_DEV,
+        dev,
         BAUDRATE,
         timeout=1,
         rtscts=False,
@@ -61,10 +92,7 @@ def main():
 
                 while b"\r" in buffer:
                     line, _, buffer = buffer.partition(b"\r")
-                    try:
-                        text = line.decode(errors="ignore")
-                    except Exception:
-                        continue
+                    text = line.decode(errors="ignore")
 
                     candump = parse_slcan_line(text)
                     if candump:
