@@ -1,11 +1,9 @@
+This directory contains test scripts for validating the CAN-to-SLCAN bridge.
+The primary focus of these tests is to verify throughput stability and ensure no message loss occurs during
+high-load CAN traffic or long-running transfers.
 
-This directory is intended for PlatformIO Test Runner and project tests.
-
-Unit Testing is a software testing method by which individual units of
-source code, sets of one or more MCU program modules together with associated
-control data, usage procedures, and operating procedures, are tested to
-determine whether they are fit for use. Unit testing finds problems early
-in the development cycle.
-
-More information about PlatformIO Unit Testing:
-- https://docs.platformio.org/en/latest/advanced/unit-testing/index.html
+Test Scripts:
+- ACM-candump.py: Captures and validates SLCAN messages coming from the USB CDC-ACM (Serial) interface.
+- BLE-candump.py: Monitors and decodes SLCAN traffic transmitted over the Bluetooth Low Energy (BLE) interface.
+- BLE-hexdump.py: Provides a raw hexadecimal view of BLE notifications for low-level debugging of the wireless stream.
+- CAN-candump.py: Directly interfaces with a native CAN bus to compare physical bus traffic against the bridged SLCAN output.
