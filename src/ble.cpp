@@ -15,7 +15,6 @@ size_t ble_uart_write(const uint8_t* /*data*/, size_t /*len*/) { return 0; }
 #include <cstring>
 #include <cstdio>
 #include "esp_log.h"
-#include "esp_err.h"
 
 // NimBLE (ESP-IDF)
 // Support both include layouts (IDF component vs upstream layout)
@@ -64,6 +63,7 @@ static const ble_uuid128_t UUID_UART_CHAR_FFE1 = BLE_UUID128_INIT(
 
 static int gatt_rw_access_cb(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt* ctxt, void* arg)
 {
+    (void)conn_handle;
     (void)attr_handle;
     (void)arg;
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR)
@@ -117,7 +117,7 @@ static int gap_event(struct ble_gap_event* event, void* /*arg*/)
         if (event->subscribe.attr_handle == s_tx_val_handle)
         {
             s_tx_notify_enabled = event->subscribe.cur_notify || event->subscribe.cur_indicate;
-            ESP_LOGI(TAG, "TX notify %s", s_tx_notify_enabled ? "enabled" : "disabled");
+            ESP_LOGI(TAG, "TX notify %s (BLE_GATT_CHR_F_NOTIFY)", s_tx_notify_enabled ? "enabled" : "disabled");
         }
         return 0;
     case BLE_GAP_EVENT_MTU:
@@ -230,7 +230,7 @@ static void on_sync(void)
 
     uint8_t addr[6] = {};
     ble_hs_id_copy_addr(s_own_addr_type, addr, NULL);
-    // Update device name to include lower 3 bytes of BLE address (lowercase hex)
+    // Update the device name to include lower 3 bytes of BLE address (lowercase hex)
     std::snprintf(s_devname, sizeof(s_devname), "SLCAN-%02x%02x%02x-LE", addr[2], addr[1], addr[0]);
     ble_svc_gap_device_name_set(s_devname);
     ESP_LOGI(TAG, "BLE own addr type=%u addr=%02X:%02X:%02X:%02X:%02X:%02X",
@@ -256,7 +256,7 @@ void ble_init()
         return;
     }
 
-    // Set initial device name (will be updated in on_sync() once address is known)
+    // Set the initial device name (will be updated in on_sync() once address is known)
     ble_svc_gap_device_name_set(s_devname);
 
     // Register GAP and GATT services
@@ -264,13 +264,15 @@ void ble_init()
     ble_svc_gatt_init();
 
     // Single HM-10 style data characteristic on FFE1: READ | WRITE | WNR | NOTIFY
+    // BLE_GATT_CHR_F_NOTIFY is the NimBLE equivalent of ESP_GATT_CHAR_PROP_BIT_NOTIFY
+    // The CCCD (0x2902) is automatically added by NimBLE when NOTIFY or INDICATE flags are set
     gatt_nus_chars[0] = {};
     gatt_nus_chars[0].uuid = &UUID_UART_CHAR_FFE1.u;
     gatt_nus_chars[0].access_cb = gatt_rw_access_cb;
     gatt_nus_chars[0].arg = nullptr;
-    gatt_nus_chars[0].descriptors = nullptr;
-    gatt_nus_chars[0].flags = (uint8_t)(BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP |
-        BLE_GATT_CHR_F_NOTIFY);
+    gatt_nus_chars[0].descriptors = nullptr; // NimBLE auto-adds CCCD for notify/indicate
+    gatt_nus_chars[0].flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP |
+        BLE_GATT_CHR_F_NOTIFY; // <-- This is the key flag!
     gatt_nus_chars[0].val_handle = &s_tx_val_handle;
 
     // Terminator
@@ -294,7 +296,8 @@ void ble_init()
         ESP_LOGE(TAG, "gatt add svcs rc=%d", rc);
         return;
     }
-    ESP_LOGI(TAG, "GATT UART service (FFE0) added; DATA=FFE1 (read/write/notify); tx_val_handle=%u", (unsigned)s_tx_val_handle);
+    ESP_LOGI(TAG, "GATT UART service (FFE0) added; DATA=FFE1 (read/write/notify); tx_val_handle=%u",
+             (unsigned)s_tx_val_handle);
 
     ble_hs_cfg.sync_cb = on_sync;
 
@@ -313,12 +316,28 @@ size_t ble_uart_write(const uint8_t* data, size_t len)
 
     // Prepare payload
     struct os_mbuf* om = ble_hs_mbuf_from_flat(data, len);
-    if (!om) return 0;
+    if (!om)
+    {
+        // Out of mbufs - BLE stack is congested
+        return 0;
+    }
 
+    // ble_gatts_notify_custom() uses the BLE_GATT_CHR_F_NOTIFY property
+    // to send unacknowledged notifications to the central
     int rc = ble_gatts_notify_custom(s_conn_handle, s_tx_val_handle, om);
     if (rc != 0)
     {
-        ESP_LOGW(TAG, "notify rc=%d", rc);
+        // Failed to send notification
+        // Note: os_mbuf is freed automatically by notify_custom on error
+        if (rc == BLE_HS_ENOMEM)
+        {
+            // Stack congestion - caller should retry
+            ESP_LOGD(TAG, "BLE stack congested (ENOMEM)");
+        }
+        else
+        {
+            ESP_LOGW(TAG, "notify failed: rc=%d", rc);
+        }
         return 0;
     }
     return len;
